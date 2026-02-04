@@ -10,10 +10,12 @@ use crate::routes::{user::{sign_up, sign_in}, website::get_website};
 pub mod request_inputs;
 pub mod request_outputs;
 pub mod routes;
+pub mod jwt;
 
 #[tokio::main]
 async fn main() -> Result<(), std::io::Error> {
 
+    dotenvy::dotenv().ok();
   
     let s = Arc::new(Mutex::new(Store::new().unwrap()));
     let app = Route::new()

@@ -2,3 +2,4 @@ api/.env
 store/.env
 .env
 target
+test_jwt.sh

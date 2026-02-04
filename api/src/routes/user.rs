@@ -10,23 +10,55 @@ use crate::request_outputs::{CreateUserOutput};
 use store::store::Store;
 
 use crate::request_outputs::SignInOutput;
+use crate::jwt;
 
 #[handler]
-pub fn sign_up(Json(data): Json<CreateUserInput>, Data(s):Data<&Arc<Mutex<Store>>>) -> Json<CreateUserOutput> {
+pub fn sign_up(Json(data): Json<CreateUserInput>, Data(s):Data<&Arc<Mutex<Store>>>) -> Result<Json<CreateUserOutput>, poem::Error> {
     let mut locked_s= s.lock().unwrap();
-    let id = locked_s.sign_up(data.username, data.password).unwrap();
-    let response = CreateUserOutput{
-        id: id.to_string()
-    };
-    Json(response)
+    match locked_s.sign_up(data.username.clone(), data.password.clone()) {
+        Ok(id) => {
+            let response = CreateUserOutput{
+                id: id.to_string()
+            };
+            Ok(Json(response))
+        }
+        Err(e) => {
+            eprintln!("Sign up error for user '{}': {:?}", data.username, e);
+            Err(poem::Error::from_string(
+                format!("Failed to create user: {:?}", e),
+                poem::http::StatusCode::INTERNAL_SERVER_ERROR,
+            ))
+        }
+    }
 }
 
 #[handler]
-pub fn sign_in(Json(data): Json<CreateUserInput>, Data(s):Data<&Arc<Mutex<Store>>>) -> Json<SignInOutput> {
+pub fn sign_in(Json(data): Json<CreateUserInput>, Data(s):Data<&Arc<Mutex<Store>>>) -> Result<Json<SignInOutput>, poem::Error> {
     let mut locked_s= s.lock().unwrap();
-    let _exists = locked_s.sign_in(data.username, data.password).unwrap();
-    let response = SignInOutput{
-        jwt: String::from("Diya")
-    };
-    Json(response)
+    match locked_s.sign_in(data.username.clone(), data.password.clone()) {
+        Ok(user_id) => {
+            match jwt::generate_jwt(&user_id) {
+                Ok(token) => {
+                    let response = SignInOutput {
+                        jwt: token
+                    };
+                    Ok(Json(response))
+                }
+                Err(e) => {
+                    eprintln!("JWT generation error: {:?}", e);
+                    Err(poem::Error::from_string(
+                        "Failed to generate token",
+                        poem::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    ))
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("Sign in error for user '{}': {:?}", data.username, e);
+            Err(poem::Error::from_string(
+                "Invalid username or password",
+                poem::http::StatusCode::UNAUTHORIZED,
+            ))
+        }
+    }
 }

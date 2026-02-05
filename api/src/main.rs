@@ -11,6 +11,7 @@ pub mod request_inputs;
 pub mod request_outputs;
 pub mod routes;
 pub mod jwt;
+pub mod password;  
 
 #[tokio::main]
 async fn main() -> Result<(), std::io::Error> {

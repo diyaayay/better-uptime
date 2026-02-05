@@ -34,10 +34,10 @@ impl Store {
             .select(User::as_select())
             .first(&mut self.conn)?;
    
-        if user_result.password != input_password {
-            return Err(diesel::result::Error::NotFound);
-        }
-        
-        Ok(user_result.id)
+            match crate::password::verify_password(&input_password, &user_result.password) {
+                Ok(true) => Ok(user_result.id),
+                Ok(false) => Err(diesel::result::Error::NotFound),
+                Err(_) => Err(diesel::result::Error::NotFound),  // Simplified - treat verification errors as not found
+            }
     }
 }

@@ -11,11 +11,23 @@ use store::store::Store;
 
 use crate::request_outputs::SignInOutput;
 use crate::jwt;
+use crate::password;
 
 #[handler]
 pub fn sign_up(Json(data): Json<CreateUserInput>, Data(s):Data<&Arc<Mutex<Store>>>) -> Result<Json<CreateUserOutput>, poem::Error> {
+
+    let hashed_password = match password::hash_password(&data.password) {
+        Ok(hash) => hash,
+        Err(e) => {
+            eprintln!("Password hashing error: {:?}", e);
+            return Err(poem::Error::from_string(
+                "Failed to process password",
+                poem::http::StatusCode::INTERNAL_SERVER_ERROR,
+            ));
+        }
+    };
     let mut locked_s= s.lock().unwrap();
-    match locked_s.sign_up(data.username.clone(), data.password.clone()) {
+    match locked_s.sign_up(data.username.clone(), hashed_password) {
         Ok(id) => {
             let response = CreateUserOutput{
                 id: id.to_string()

@@ -14,3 +14,4 @@ jsonwebtoken = "9.3"
 chrono = {version = "0.4", features = ["serde"]}
 argon2 = {version = "0.5.3" }
 rand_core = { version = "0.6", features = ["getrandom"] }
+diesel = "2.3.6"

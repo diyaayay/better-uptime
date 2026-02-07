@@ -6,12 +6,13 @@ use poem::{
 
 use store::store::Store;
 
-use crate::routes::{user::{sign_up, sign_in}, website::get_website};
+use crate::routes::{user::{sign_in, sign_up}, website::{create_website, get_website}};
 pub mod request_inputs;
 pub mod request_outputs;
 pub mod routes;
 pub mod jwt;
 pub mod password;  
+pub mod auth;
 
 #[tokio::main]
 async fn main() -> Result<(), std::io::Error> {
@@ -21,7 +22,7 @@ async fn main() -> Result<(), std::io::Error> {
     let s = Arc::new(Mutex::new(Store::new().unwrap()));
     let app = Route::new()
         .at("/website/:website_id", get(get_website))
-        .at("/website", post(get_website))
+        .at("/website", post(create_website))
         .at("/sign-up", post(sign_up))
         .at("/sign-in", post(sign_in))
         .data(s);

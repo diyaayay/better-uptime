@@ -20,3 +20,15 @@ pub struct SignInOutput {
 pub struct GetWebsiteOutput {
     pub url: String
 }
+
+#[derive(Serialize, Deserialize)]
+pub struct ListWebsiteOutput {
+    pub items: Vec<WebsiteItem>
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct WebsiteItem {
+    pub id: String,
+    pub url: String,
+    pub time_added: String
+}

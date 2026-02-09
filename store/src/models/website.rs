@@ -39,4 +39,47 @@ impl Store {
         .first(&mut self.conn)?;
     Ok(website_result)
     }
+
+    pub fn list_websites(&mut self, input_user_id: String) -> Result<Vec<Website>, diesel::result::Error>{
+        use crate::schema::website::dsl::*;
+        let websites = website.filter
+        (user_id.eq(input_user_id.clone()))
+        .order(time_added.desc())
+        .select(Website::as_select())
+        .load(&mut self.conn)?;
+    Ok(websites)  
+    }
+
+    pub fn update_website(
+        &mut self,
+        website_id: String,
+        input_user_id: String,
+        new_url: String
+    ) -> Result<Website, diesel::result::Error> {
+        use crate::schema::website::dsl::*;
+        let updated = diesel::update(
+            website
+        ).filter(id.eq(website_id.clone()))
+        .filter(user_id.eq(input_user_id.clone()))
+        .set(url.eq(new_url))
+        .returning(Website::as_returning())
+        .get_result(&mut self.conn)?;
+    Ok(updated)
+    }
+
+    pub fn delete_website (
+        &mut self,
+        website_id: String,
+        input_user_id :String 
+    ) -> Result< usize, diesel::result::Error> {
+        use crate::schema::website::dsl::*;
+        let deleted = diesel::delete(website)
+        .filter(id.eq(website_id.clone()))
+        .filter(user_id.eq(input_user_id.clone()))
+        .execute(&mut self.conn)?;
+    if deleted == 0 {
+        return Err(diesel::result::Error::NotFound);
+    }
+    Ok(deleted)
+}
 }

@@ -16,3 +16,4 @@ argon2 = {version = "0.5.3" }
 rand_core = { version = "0.6", features = ["getrandom"] }
 diesel = "2.3.6"
 async-trait = "0.1.89"
+serde_json = "1"

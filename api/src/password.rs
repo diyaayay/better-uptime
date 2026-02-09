@@ -14,7 +14,6 @@ pub fn hash_password(password: &str) -> Result<String, Error> {
 
 
 /// Verify a plaintext password against stored hash
-
 pub fn verify_password(password: &str, hash:&str) -> Result<bool, Error> {
     let parsed_hash = PasswordHash::new(hash)?;
     let argon2 = Argon2::default();

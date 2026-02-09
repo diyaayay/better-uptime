@@ -12,3 +12,8 @@ pub struct CreateUserInput {
    pub username: String,
    pub password: String
 }
+
+#[derive(Serialize,Deserialize)]
+pub struct UpdateWebsiteInput {
+   pub url:String
+}

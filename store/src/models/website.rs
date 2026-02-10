@@ -10,8 +10,13 @@ pub struct Website {
     pub id: String,
     pub url: String,
     pub user_id: String,
-    pub time_added: chrono::NaiveDateTime
+    pub time_added: chrono::NaiveDateTime,
+    pub is_up: Option<bool>,
+    pub last_checked: Option<chrono::NaiveDateTime>,
+    pub last_down_time: Option<chrono::NaiveDateTime>,
+    pub response_time_ms: Option<i32>,
 }
+
 
 
 impl Store {
@@ -21,7 +26,11 @@ impl Store {
             user_id,
             url,
             id:id.to_string(),
-            time_added: Utc::now().naive_utc()
+            time_added: Utc::now().naive_utc(),
+            is_up: Some(true),
+            last_checked: None,
+            last_down_time: None,
+            response_time_ms: None
         };
 
         diesel::insert_into(crate::schema::website::table)

@@ -8,7 +8,7 @@ use store::store::Store;
 
 use crate::routes::{
     user::{sign_in, sign_up},
-    website::{create_website, get_website, list_websites, update_website, delete_website},
+    website::{create_website, get_website, list_websites, update_website, delete_website, check_website_now},
 };
 pub mod request_inputs;
 pub mod request_outputs;
@@ -16,6 +16,7 @@ pub mod routes;
 pub mod jwt;
 pub mod password;  
 pub mod auth;
+pub mod monitor;
 
 #[tokio::main]
 async fn main() -> Result<(), std::io::Error> {
@@ -27,6 +28,7 @@ async fn main() -> Result<(), std::io::Error> {
     .at("/websites", get(list_websites))
     .at("/website/:website_id", get(get_website).put(update_website).delete(delete_website))
     .at("/website", post(create_website))
+    .at("/website/:website_id/check", get(check_website_now))
     .at("/sign-up", post(sign_up))
     .at("/sign-in", post(sign_in))
     .data(s);

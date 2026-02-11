@@ -91,4 +91,13 @@ impl Store {
     }
     Ok(deleted)
 }
+
+pub fn get_all_websites(&mut self) -> Result<Vec<Website>, diesel::result::Error> {
+    use crate::schema::website::dsl::*;
+
+    let all_websites = website.select(Website::as_select())
+    .load(&mut self.conn)?;
+
+    Ok(all_websites)
+}
 }

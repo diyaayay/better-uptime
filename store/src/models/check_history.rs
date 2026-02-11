@@ -65,4 +65,22 @@ impl Store {
 
         Ok(())
     }
+
+    pub fn get_website_history(
+        &mut self,
+        website_id_value: String,
+        limit: i64,
+        offset: i64
+    ) -> Result<Vec<CheckHistory>, diesel::result::Error> {
+        use crate::schema::check_history::dsl::*;
+
+        let results = check_history
+        .filter(website_id.eq(website_id_value))
+        .order(checked_at.desc())
+        .limit(limit)
+        .offset(offset)
+        .select(CheckHistory::as_select())
+        .load(&mut self.conn)?;
+    Ok(results)
+    }
 }

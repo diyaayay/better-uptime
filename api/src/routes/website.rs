@@ -1,10 +1,24 @@
 use std::sync::{Arc, Mutex};
-use diesel::result::Error as DieselError;
-use poem::{ handler,web::{Data, Json, Path}
+use diesel::{ result::Error as DieselError};
+use poem::{
+    handler,
+    web::{Data, Json, Path, Query},
 };
 
-use crate::{monitor::check_website, request_inputs::{CreateWebsiteInput, UpdateWebsiteInput}};
-use crate::request_outputs::{CreateWebsiteOutput, GetWebsiteOutput, ListWebsiteOutput, WebsiteItem};
+use crate::{monitor::check_website,
+    request_inputs::{
+        CreateWebsiteInput, 
+        UpdateWebsiteInput
+    }};
+use crate::request_outputs::{
+    CreateWebsiteOutput,
+    GetWebsiteOutput,
+    ListWebsiteOutput,
+    WebsiteItem,
+    WebsiteHistoryOutput,
+    CheckHistoryItem,
+    WebsiteStatusOutput
+};
 use store::store::Store;
 use crate::auth::AuthUser;
 
@@ -16,6 +30,11 @@ pub struct CheckNowOutput {
     pub error_message: Option<String>,
 }
 
+#[derive(serde::Deserialize)]
+pub struct HistoryQuery {
+    pub limit: Option<i64>,
+    pub offset: Option<i64>
+}
 #[handler]
 pub fn get_website(Path(id): Path<String>,
 AuthUser(user_id) : AuthUser,
@@ -244,4 +263,104 @@ pub async fn check_website_now(
         status_code: result.status_code,
         error_message: result.error_message,
     }))
+}
+
+#[handler]
+pub fn get_website_status(
+    Path(id): Path<String>,
+    AuthUser(user_id): AuthUser,
+    Data(s): Data<&Arc<Mutex<Store>>>,
+) -> Result<Json<WebsiteStatusOutput>, poem::Error> {
+    let mut locked = s.lock().unwrap();
+    let website = locked.get_website(id.clone())
+    .map_err(|e| {
+        eprintln!("Error fetching website {} for status {:?}", id, e);
+    match e {
+        DieselError::NotFound => poem::Error::from_string(
+          "Website not found",
+          poem::http::StatusCode::NOT_FOUND,
+        ),
+        _ => poem::Error::from_string(
+            "Failed to fetch the website status",
+            poem::http::StatusCode::INTERNAL_SERVER_ERROR,
+        ),
+    }
+})?;
+
+if website.user_id != user_id {
+    return Err(poem::Error::from_string (
+        "You don't have permission to access the website",
+        poem::http::StatusCode::FORBIDDEN,
+    ));
+}
+
+let last_checked_str = website.last_checked
+.map(|dt| dt.format("%Y-%m-%dT%H:%M:%S").to_string());
+
+let last_down_time_str = website.last_down_time
+.map(|dt| dt.format("%Y-%m-%dT%H:%M:%S").to_string());
+
+let output = WebsiteStatusOutput{
+    is_up: website.is_up,
+    last_checked : last_checked_str,
+    last_down_time : last_down_time_str,
+    response_time_ms : website.response_time_ms,
+};
+
+Ok(Json(output))
+}
+
+#[handler]
+pub fn get_website_history (
+    Path(id): Path<String>,
+    AuthUser(user_id): AuthUser,
+    Query(query): Query<HistoryQuery>,
+    Data(s): Data<&Arc<Mutex<Store>>>,
+) -> Result<Json<WebsiteHistoryOutput>, poem::Error> {
+    let mut locked = s.lock().unwrap();
+
+    let website = locked.get_website(id.clone())
+    .map_err(|e| {
+        eprintln!("Error fetching website {} for history: {:?}", id, e);
+        match e {
+            DieselError::NotFound => poem::Error::from_string(
+                "Website not found",
+                poem::http::StatusCode::NOT_FOUND,
+            ),
+            _ => poem::Error::from_string(
+                "Failed to fetch the website history",
+                poem::http::StatusCode::INTERNAL_SERVER_ERROR,
+            ),
+        }
+    })?;
+    if website.user_id != user_id {
+        return Err(poem::Error::from_string(
+            "You don't have permission to access the website",
+            poem::http::StatusCode::FORBIDDEN,
+        ));
+    }
+
+    let limit = query.limit.unwrap_or(50).clamp(1,500);
+    let offset = query.offset.unwrap_or(0).max(0);
+
+    let history = locked.get_website_history(id.clone(), limit, offset)
+    .map_err(|e| {
+        eprintln!("Error fetching website history {}: {:?}", id, e);
+        poem::Error::from_string(
+            "failed to fetch website history",
+            poem::http::StatusCode::INTERNAL_SERVER_ERROR
+        )
+    })?;
+
+    let items = history.into_iter()
+    .map(|h| CheckHistoryItem {
+        checked_at: h.checked_at.format("%Y-%m-%dT%H:%M:%S").to_string(),
+        is_up: h.is_up,
+        response_time_ms: h.response_time_ms,
+        status_code: h.status_code,
+        error_message: h.error_message
+    })
+    .collect();
+
+    Ok(Json(WebsiteHistoryOutput { items }))
 }

@@ -32,3 +32,26 @@ pub struct WebsiteItem {
     pub url: String,
     pub time_added: String
 }
+
+#[derive(Serialize, Deserialize)]
+pub struct WebsiteStatusOutput {
+    pub is_up: Option<bool>,
+    pub last_checked: Option<String>,
+    pub last_down_time: Option<String>,
+    pub response_time_ms: Option<i32>
+    }
+
+    #[derive(Serialize, Deserialize)]
+    pub struct CheckHistoryItem {
+        pub checked_at: String,
+        pub is_up: bool,
+        pub response_time_ms: Option<i32>,
+        pub status_code: Option<i32>,
+        pub error_message: Option<String>
+    }
+
+    #[derive(Serialize, Deserialize)]
+    pub struct WebsiteHistoryOutput {
+        pub items: Vec<CheckHistoryItem>
+    }
+

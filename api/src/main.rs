@@ -17,13 +17,17 @@ pub mod jwt;
 pub mod password;  
 pub mod auth;
 pub mod monitor;
-
+pub mod worker;
 #[tokio::main]
 async fn main() -> Result<(), std::io::Error> {
 
     dotenvy::dotenv().ok();
   
     let s = Arc::new(Mutex::new(Store::new().unwrap()));
+
+    crate::worker::start_background_worker(s.clone(), 60);
+    println!("[Server] Starting API server on http://0.0.0.0:3000");
+    
     let app = Route::new()
     .at("/websites", get(list_websites))
     .at("/website/:website_id", get(get_website).put(update_website).delete(delete_website))

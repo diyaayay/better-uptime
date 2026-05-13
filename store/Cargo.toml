@@ -11,3 +11,9 @@ uuid = { version = "1.17.0", features = ["v4"] }
 argon2 = "0.5.3"
 rand_core = "0.10.0"
 thiserror = "2.0.18"
+
+[dev-dependencies]
+diesel_migrations = { version = "2.3.2", features = ["postgres"] }
+dotenvy = "0.15.7"
+rand = "0.8"
+tokio = { version = "1.49.0", features = ["macros", "rt-multi-thread"] }

@@ -11,6 +11,7 @@ A small **website uptime monitor**: users sign up, add URLs, and the service rec
 - Background worker: periodic HTTP checks, writes history and latest status
 - On-demand check, status snapshot, paginated check history
 - **Migrations** run automatically when the API process starts (embedded Diesel migrations from `store/migrations`)
+- **Liveness / readiness**: `GET /healthz` (no DB) and `GET /readyz` (`SELECT 1` via the pool; **503** if Postgres is unreachable)
 
 ## Architecture
 
@@ -89,6 +90,8 @@ Base URL: `http://localhost:3000` (or your host).
 
 Public:
 
+- `GET /healthz` — liveness (**200**, body `ok`; does not touch the database)
+- `GET /readyz` — readiness (**200** + `ok` if the pool can query Postgres; **503** if the database is unavailable)
 - `POST /sign-up` — JSON `{ "username", "password" }`
 - `POST /sign-in` — same body; returns `{ "jwt": "<token>" }`
 
@@ -101,20 +104,21 @@ Protected (header `Authorization: Bearer <jwt>`):
 
 ### Example: sign up, sign in, create a website
 
+Use a **unique username** each time (the API rejects duplicates). [jq](https://jqlang.github.io/jq/) avoids hand-copying the JWT.
+
 ```bash
+USER="alice_$(date +%s)"
+
 curl -sS -X POST http://localhost:3000/sign-up \
   -H 'Content-Type: application/json' \
-  -d '{"username":"alice","password":"hunter42now"}'
+  -d "{\"username\":\"$USER\",\"password\":\"hunter42now\"}"
 
-curl -sS -X POST http://localhost:3000/sign-in \
+TOKEN=$(curl -sS -X POST http://localhost:3000/sign-in \
   -H 'Content-Type: application/json' \
-  -d '{"username":"alice","password":"hunter42now"}'
-# Copy the jwt value, then:
-
-export JWT='<paste jwt here>'
+  -d "{\"username\":\"$USER\",\"password\":\"hunter42now\"}" | jq -r .jwt)
 
 curl -sS -X POST http://localhost:3000/website \
-  -H "Authorization: Bearer $JWT" \
+  -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"url":"https://example.com"}'
 ```
@@ -124,7 +128,9 @@ curl -sS -X POST http://localhost:3000/website \
 | Path | Role |
 |------|------|
 | `api/` | HTTP server, worker, JWT, startup config & embedded migrations |
+| `api/tests/` | HTTP integration tests (Poem + Postgres; needs `DATABASE_URL` + `JWT_SECRET`) |
 | `store/` | Diesel models, schema, SQL migrations |
+| `store/tests/` | Store integration tests (Postgres; needs `DATABASE_URL`) |
 | `docker-compose.yml` | Postgres + API services |
 | `Dockerfile` | Multi-stage release image for `api` |
 
@@ -138,6 +144,15 @@ cargo test --workspace
 ```
 
 CI (GitHub Actions) runs the same checks on push/PR to `main`.
+
+### Tests
+
+Integration tests use a **real PostgreSQL** database (same migrations as production).
+
+- **API** (`api/tests/http_integration.rs`): set **`DATABASE_URL`** and **`JWT_SECRET`** (≥ 32 characters). Each test crate loads the repo-root **`.env`** when present (paths are resolved from `api/` / `store/`).
+- **Store** (`store/tests/db_integration.rs`): needs **`DATABASE_URL`** only; **`.env`** loading matches the API tests.
+
+If `cargo test` fails to connect, start the DB (e.g. `docker compose up -d postgres`) and align `DATABASE_URL` in `.env` with your compose credentials.
 
 ## License
 

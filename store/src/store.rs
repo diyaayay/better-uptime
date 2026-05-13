@@ -1,6 +1,7 @@
 use deadpool_diesel::postgres::{Manager, Pool, Runtime};
 use deadpool_diesel::{InteractError, PoolError};
 use diesel::result::Error as DieselError;
+use diesel::{RunQueryDsl, sql_query};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -34,5 +35,13 @@ impl Store {
         let manager = Manager::new(database_url.as_ref().to_string(), Runtime::Tokio1);
         let pool = Pool::builder(manager).max_size(16).build()?;
         Ok(Self { pool })
+    }
+
+    /// Cheap query to verify the database accepts connections (readiness probes).
+    pub async fn ping_db(&self) -> Result<(), StoreError> {
+        let conn = self.pool.get().await?;
+        conn.interact(|conn| sql_query("SELECT 1").execute(conn).map(|_| ()))
+            .await??;
+        Ok(())
     }
 }

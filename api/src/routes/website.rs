@@ -7,6 +7,7 @@ use poem::{
 };
 
 use crate::auth::AuthUser;
+use crate::check_pipeline::record_check_update_status_notify;
 use crate::config::AppState;
 use crate::monitor::check_website;
 use crate::request_inputs::{CreateWebsiteInput, UpdateWebsiteInput};
@@ -45,6 +46,20 @@ fn map_store_err(
     }
 }
 
+fn validate_optional_webhook_url(hook: Option<&str>) -> Result<(), poem::Error> {
+    let Some(u) = hook.map(str::trim).filter(|s| !s.is_empty()) else {
+        return Ok(());
+    };
+    if u.len() > 2048 {
+        return Err(poem::Error::from_string(
+            "webhook_url must be at most 2048 characters",
+            poem::http::StatusCode::BAD_REQUEST,
+        ));
+    }
+    validate_url(u)?;
+    Ok(())
+}
+
 fn validate_url(url: &str) -> Result<(), poem::Error> {
     if url.trim().is_empty() {
         return Err(poem::Error::from_string(
@@ -79,7 +94,10 @@ pub async fn get_website(
         ));
     }
 
-    Ok(Json(GetWebsiteOutput { url: website.url }))
+    Ok(Json(GetWebsiteOutput {
+        url: website.url,
+        webhook_url: website.webhook_url,
+    }))
 }
 
 #[handler]
@@ -89,10 +107,16 @@ pub async fn create_website(
     Data(s): Data<&Arc<AppState>>,
 ) -> Result<Json<CreateWebsiteOutput>, poem::Error> {
     validate_url(&data.url)?;
+    validate_optional_webhook_url(data.webhook_url.as_deref())?;
+
+    let hook = data
+        .webhook_url
+        .map(|s| s.trim().to_string())
+        .and_then(|s| if s.is_empty() { None } else { Some(s) });
 
     let website = s
         .store
-        .create_website(user_id, data.url)
+        .create_website(user_id, data.url, hook)
         .await
         .map_err(|e| {
             eprintln!("Error creating website: {:?}", e);
@@ -124,6 +148,7 @@ pub async fn list_websites(
             id: w.id,
             url: w.url,
             time_added: w.time_added.format("%Y-%m-%dT%H:%M:%S").to_string(),
+            webhook_url: w.webhook_url,
         })
         .collect();
 
@@ -138,10 +163,13 @@ pub async fn update_website(
     Data(s): Data<&Arc<AppState>>,
 ) -> Result<Json<CreateWebsiteOutput>, poem::Error> {
     validate_url(&data.url)?;
+    if let Some(Some(ref u)) = data.webhook_url {
+        validate_optional_webhook_url(Some(u.as_str()))?;
+    }
 
     let website = s
         .store
-        .update_website(id.clone(), user_id, data.url)
+        .update_website(id.clone(), user_id, data.url, data.webhook_url)
         .await
         .map_err(|e| {
             eprintln!("Error updating website {}: {:?}", id, e);
@@ -199,33 +227,22 @@ pub async fn check_website_now(
 
     let result = check_website(&website.url).await;
 
-    s.store
-        .record_check(
-            id.clone(),
-            result.is_up,
-            result.response_time_ms,
-            result.status_code,
-            result.error_message.clone(),
+    record_check_update_status_notify(
+        &s.store,
+        id.clone(),
+        website.url.clone(),
+        website.is_up,
+        website.webhook_url.clone(),
+        &result,
+    )
+    .await
+    .map_err(|e| {
+        eprintln!("Error persisting check for website {}: {:?}", id, e);
+        poem::Error::from_string(
+            "Failed to record check or update status",
+            poem::http::StatusCode::INTERNAL_SERVER_ERROR,
         )
-        .await
-        .map_err(|e| {
-            eprintln!("Error recording check for website {}: {:?}", id, e);
-            poem::Error::from_string(
-                "Failed to record check history",
-                poem::http::StatusCode::INTERNAL_SERVER_ERROR,
-            )
-        })?;
-
-    s.store
-        .update_website_status(id.clone(), result.is_up, result.response_time_ms)
-        .await
-        .map_err(|e| {
-            eprintln!("Error updating website status {}: {:?}", id, e);
-            poem::Error::from_string(
-                "Failed to update website status",
-                poem::http::StatusCode::INTERNAL_SERVER_ERROR,
-            )
-        })?;
+    })?;
 
     Ok(Json(CheckNowOutput {
         is_up: result.is_up,

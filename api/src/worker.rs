@@ -1,74 +1,73 @@
 use std::sync::Arc;
 
 use store::Store;
+use tracing::{error, info};
 
+use crate::check_pipeline::record_check_update_status_notify;
 use crate::monitor::check_website;
 
 pub async fn check_all_websites(store: Arc<Store>) {
-    println!("[Worker] Starting check cycle for all websites...");
+    info!("worker check cycle: fetching websites");
 
     let websites = match store.get_all_websites().await {
         Ok(websites) => websites,
         Err(e) => {
-            eprintln!("[Worker] Error fetching websites: {:?}", e);
+            error!(error = ?e, "worker failed to list websites");
             return;
         }
     };
 
     if websites.is_empty() {
-        println!("[Worker] No websites to check");
+        info!("worker check cycle: no websites");
         return;
     }
 
-    println!("[Worker] Checking {} websites...", websites.len());
+    info!(
+        count = websites.len(),
+        "worker check cycle: checking websites"
+    );
 
     for website in websites {
         let website_id = website.id.clone();
-        let url = website.url.clone();
+        let monitored_url = website.url.clone();
+        let prev_is_up = website.is_up;
+        let webhook_url = website.webhook_url.clone();
 
-        println!("[Worker] checking website {}: {}", website_id, url);
+        info!(%website_id, %monitored_url, "worker: checking");
 
-        let result = check_website(&url).await;
+        let result = check_website(&monitored_url).await;
 
         if result.is_up {
-            println!(
-                "[Worker] ✓ {} is UP ({}ms, status {})",
-                url,
-                result.response_time_ms.unwrap_or(0),
-                result.status_code.unwrap_or(0),
+            info!(
+                %monitored_url,
+                ms = ?result.response_time_ms,
+                status = ?result.status_code,
+                "worker: site up",
             );
         } else {
-            println!(
-                "[Worker] ✗ {} is DOWN: {}",
-                url,
-                result.error_message.as_deref().unwrap_or("Unknown error")
+            info!(
+                %monitored_url,
+                err = %result.error_message.as_deref().unwrap_or("unknown"),
+                "worker: site down",
             );
         }
 
-        match store
-            .record_check(
-                website_id.clone(),
-                result.is_up,
-                result.response_time_ms,
-                result.status_code,
-                result.error_message.clone(),
-            )
-            .await
+        match record_check_update_status_notify(
+            &store,
+            website_id.clone(),
+            monitored_url.clone(),
+            prev_is_up,
+            webhook_url,
+            &result,
+        )
+        .await
         {
-            Ok(_) => println!("[Worker] Recorded check history for {}", website_id),
-            Err(e) => eprintln!("[Worker] Error recording check: {:?}", e),
-        }
-
-        match store
-            .update_website_status(website_id.clone(), result.is_up, result.response_time_ms)
-            .await
-        {
-            Ok(_) => println!("[Worker] Updated status for {}", website_id),
-            Err(e) => eprintln!("[Worker] Error updating status: {:?}", e),
+            Ok(()) => info!(%website_id, "worker: persisted check and status"),
+            Err(e) => error!(%website_id, error = ?e, "worker: failed to persist check/status"),
         }
     }
 
-    println!("[Worker] Finished check cycle");
+    info!("worker check cycle: finished");
 }
 
 /// Background worker that periodically checks all websites.
@@ -78,9 +77,9 @@ pub fn start_background_worker(store: Arc<Store>, interval_seconds: u64) {
             tokio::time::interval(tokio::time::Duration::from_secs(interval_seconds));
         interval.tick().await;
 
-        println!(
-            "[Worker] Background worker started (checking every {} seconds)",
-            interval_seconds
+        info!(
+            interval_secs = interval_seconds,
+            "background worker started",
         );
 
         loop {

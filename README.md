@@ -2,7 +2,7 @@
 
 A small **website uptime monitor**: users sign up, add URLs, and the service records HTTP checks on a schedule plus on-demand checks. Built as a Rust workspace (HTTP API + PostgreSQL + background worker).
 
-**Stack:** Rust (edition 2024), [Poem](https://github.com/poem-web/poem), Tokio, Diesel + PostgreSQL, [deadpool-diesel](https://github.com/bikeshedder/deadpool), JWT (HS256) + Argon2, Docker Compose.
+**Stack:** Rust (edition 2024), [Poem](https://github.com/poem-web/poem), Tokio, Diesel + PostgreSQL, [deadpool-diesel](https://github.com/bikeshedder/deadpool), JWT (HS256) + Argon2, [tracing](https://github.com/tokio-rs/tracing), Docker Compose.
 
 ## Features
 
@@ -12,6 +12,8 @@ A small **website uptime monitor**: users sign up, add URLs, and the service rec
 - On-demand check, status snapshot, paginated check history
 - **Migrations** run automatically when the API process starts (embedded Diesel migrations from `store/migrations`)
 - **Liveness / readiness**: `GET /healthz` (no DB) and `GET /readyz` (`SELECT 1` via the pool; **503** if Postgres is unreachable)
+- **Structured HTTP logs** via [`tracing`](https://github.com/tokio-rs/tracing) + Poem request middleware (`RUST_LOG`, default `info`)
+- **Optional status webhooks**: per-website `webhook_url`; worker and on-demand checks `POST` JSON on **up→down** and **down→up** transitions
 
 ## Architecture
 
@@ -82,6 +84,7 @@ The API container receives a `DATABASE_URL` pointing at the `postgres` service. 
 |----------|----------|-------------|
 | `DATABASE_URL` | Yes | PostgreSQL connection URL (see `.env.example`) |
 | `JWT_SECRET` | Yes | HMAC key for JWT; **minimum 32 characters** |
+| `RUST_LOG` | No | Log filter for `tracing` (e.g. `info`, `debug,poem=trace`); defaults to `info,poem=info` |
 | `POSTGRES_*` | Optional | Used by `docker-compose.yml` for the database service defaults |
 
 ## HTTP API (overview)
@@ -98,9 +101,13 @@ Public:
 Protected (header `Authorization: Bearer <jwt>`):
 
 - `GET/POST/PUT/DELETE` — `/websites`, `/website`, `/website/:id`, etc.
+- `POST /website` — JSON body may include optional `webhook_url` (http/https) for transition alerts
+- `PUT /website/:id` — JSON body: omit `webhook_url` to leave it unchanged; send JSON `null` to clear
 - `GET /website/:id/check` — run a check now
 - `GET /website/:id/status` — last known status
 - `GET /website/:id/history?limit=&offset=` — check history
+
+Status webhooks: on **up→down** or **down→up**, the service `POST`s JSON to `webhook_url` with fields `event` (`website.down` / `website.up`), `website_id`, `url` (monitored URL), `is_up`, `response_time_ms`, `status_code`, `error_message`.
 
 ### Example: sign up, sign in, create a website
 

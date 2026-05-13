@@ -18,6 +18,7 @@ pub struct SignInOutput {
 #[derive(Serialize, Deserialize)]
 pub struct GetWebsiteOutput {
     pub url: String,
+    pub webhook_url: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -30,6 +31,8 @@ pub struct WebsiteItem {
     pub id: String,
     pub url: String,
     pub time_added: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub webhook_url: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]

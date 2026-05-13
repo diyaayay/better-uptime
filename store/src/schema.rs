@@ -45,6 +45,7 @@ diesel::table! {
         last_checked -> Nullable<Timestamp>,
         last_down_time -> Nullable<Timestamp>,
         response_time_ms -> Nullable<Int4>,
+        webhook_url -> Nullable<Text>,
     }
 }
 

@@ -1,0 +1,1 @@
+ALTER TABLE website DROP COLUMN IF EXISTS webhook_url;

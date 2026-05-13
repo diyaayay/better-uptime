@@ -2,9 +2,11 @@
 
 use std::sync::Arc;
 
+use poem::middleware::Tracing;
 use poem::{EndpointExt, IntoEndpoint, Route, get, post};
 
 pub mod auth;
+pub mod check_pipeline;
 pub mod config;
 pub mod db_migrate;
 pub mod health;
@@ -14,6 +16,7 @@ pub mod password;
 pub mod request_inputs;
 pub mod request_outputs;
 pub mod routes;
+pub mod webhook_notify;
 pub mod worker;
 
 use crate::config::AppState;
@@ -41,4 +44,5 @@ pub fn app_router(state: Arc<AppState>) -> impl IntoEndpoint {
         .at("/sign-up", post(sign_up))
         .at("/sign-in", post(sign_in))
         .data(state)
+        .with(Tracing)
 }

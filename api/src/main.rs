@@ -3,9 +3,17 @@ use poem::{Server, listener::TcpListener};
 use api::config::{AppConfig, AppState};
 use api::{app_router, db_migrate, worker};
 
+fn init_tracing() {
+    use tracing_subscriber::EnvFilter;
+    let filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,poem=info"));
+    tracing_subscriber::fmt().with_env_filter(filter).init();
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
+    init_tracing();
 
     let config = AppConfig::from_env().unwrap_or_else(|e| {
         eprintln!("configuration error:\n{}", e);
@@ -23,7 +31,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     worker::start_background_worker(state.store.clone(), 60);
-    println!("[Server] Starting API server on http://0.0.0.0:3000");
+    tracing::info!("listening on http://0.0.0.0:3000");
 
     let app = app_router(state);
 

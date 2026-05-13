@@ -16,6 +16,7 @@ pub struct Website {
     pub last_checked: Option<chrono::NaiveDateTime>,
     pub last_down_time: Option<chrono::NaiveDateTime>,
     pub response_time_ms: Option<i32>,
+    pub webhook_url: Option<String>,
 }
 
 impl Store {
@@ -23,6 +24,7 @@ impl Store {
         &self,
         user_id: String,
         url: String,
+        webhook_url: Option<String>,
     ) -> Result<Website, StoreError> {
         let new_website = Website {
             id: Uuid::new_v4().to_string(),
@@ -33,6 +35,7 @@ impl Store {
             last_checked: None,
             last_down_time: None,
             response_time_ms: None,
+            webhook_url,
         };
 
         let conn = self.pool.get().await?;
@@ -82,17 +85,26 @@ impl Store {
         website_id: String,
         input_user_id: String,
         new_url: String,
+        webhook_url_patch: Option<Option<String>>,
     ) -> Result<Website, StoreError> {
         let conn = self.pool.get().await?;
         let updated = conn
             .interact(move |conn| {
                 use crate::schema::website::dsl::*;
-                diesel::update(website)
-                    .filter(id.eq(website_id))
-                    .filter(user_id.eq(input_user_id))
-                    .set(url.eq(new_url))
-                    .returning(Website::as_returning())
-                    .get_result(conn)
+                match webhook_url_patch {
+                    Some(wh) => diesel::update(website)
+                        .filter(id.eq(website_id.clone()))
+                        .filter(user_id.eq(input_user_id.clone()))
+                        .set((url.eq(new_url.clone()), webhook_url.eq(wh)))
+                        .returning(Website::as_returning())
+                        .get_result(conn),
+                    None => diesel::update(website)
+                        .filter(id.eq(website_id))
+                        .filter(user_id.eq(input_user_id))
+                        .set(url.eq(new_url))
+                        .returning(Website::as_returning())
+                        .get_result(conn),
+                }
             })
             .await??;
         Ok(updated)

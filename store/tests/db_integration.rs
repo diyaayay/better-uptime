@@ -102,14 +102,23 @@ async fn website_crud_list_delete_and_not_found() {
         .expect("sign_up");
 
     let w = store
-        .create_website(user_id.clone(), "https://example.com/a".into())
+        .create_website(
+            user_id.clone(),
+            "https://example.com/a".into(),
+            Some("https://example.com/hook".into()),
+        )
         .await
         .expect("create_website");
     assert_eq!(w.user_id, user_id);
     assert_eq!(w.url, "https://example.com/a");
+    assert_eq!(w.webhook_url.as_deref(), Some("https://example.com/hook"));
 
     let fetched = store.get_website(w.id.clone()).await.expect("get_website");
     assert_eq!(fetched.id, w.id);
+    assert_eq!(
+        fetched.webhook_url.as_deref(),
+        Some("https://example.com/hook")
+    );
 
     let list = store
         .list_websites(user_id.clone())
@@ -122,10 +131,24 @@ async fn website_crud_list_delete_and_not_found() {
             w.id.clone(),
             user_id.clone(),
             "https://example.com/b".into(),
+            Some(None),
         )
         .await
         .expect("update_website");
     assert_eq!(updated.url, "https://example.com/b");
+    assert!(updated.webhook_url.is_none());
+
+    let updated = store
+        .update_website(
+            w.id.clone(),
+            user_id.clone(),
+            "https://example.com/c".into(),
+            None,
+        )
+        .await
+        .expect("update_website url only");
+    assert_eq!(updated.url, "https://example.com/c");
+    assert!(updated.webhook_url.is_none());
 
     let other_user = store
         .sign_up(unique_name("other"), test_password_hash("password12"))
@@ -139,7 +162,7 @@ async fn website_crud_list_delete_and_not_found() {
     ));
 
     let wrong_update = store
-        .update_website(w.id.clone(), other_user, "https://evil.com".into())
+        .update_website(w.id.clone(), other_user, "https://evil.com".into(), None)
         .await;
     assert!(matches!(
         wrong_update,
@@ -168,7 +191,7 @@ async fn check_history_and_website_status() {
         .expect("sign_up");
 
     let w = store
-        .create_website(user_id, "https://example.com/monitor".into())
+        .create_website(user_id, "https://example.com/monitor".into(), None)
         .await
         .expect("create_website");
 

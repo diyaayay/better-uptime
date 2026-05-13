@@ -1,90 +1,78 @@
-use std::sync::{Arc, Mutex};
-
-use poem::web::{Data, Json};
-use poem::{
-    handler
-};
-use diesel::result::{DatabaseErrorKind, Error as DieselError};
-
-use crate::request_inputs::{CreateUserInput};
-use crate::request_outputs::{CreateUserOutput};
-use store::store::Store;
-
-use crate::request_outputs::SignInOutput;
+use crate::config::AppState;
 use crate::jwt;
 use crate::password;
+use crate::request_inputs::CreateUserInput;
+use crate::request_outputs::{CreateUserOutput, SignInOutput};
+use diesel::result::{DatabaseErrorKind, Error as DieselError};
+use poem::handler;
+use poem::web::{Data, Json};
+use std::sync::Arc;
+use store::StoreError;
 
 #[handler]
-pub fn sign_up(Json(data): Json<CreateUserInput>, Data(s):Data<&Arc<Mutex<Store>>>) -> Result<Json<CreateUserOutput>, poem::Error> {
+pub async fn sign_up(
+    Json(data): Json<CreateUserInput>,
+    Data(s): Data<&Arc<AppState>>,
+) -> Result<Json<CreateUserOutput>, poem::Error> {
     validate_user_input(&data.username, &data.password)?;
-    let hashed_password = match password::hash_password(&data.password) {
-        Ok(hash) => hash,
-        Err(e) => {
-            eprintln!("Password hashing error: {:?}", e);
-            return Err(poem::Error::from_string(
-                "Failed to process password",
-                poem::http::StatusCode::INTERNAL_SERVER_ERROR,
-            ));
-        }
-    };
-    let mut locked_s= s.lock().unwrap();
-    match locked_s.sign_up(data.username.clone(), hashed_password) {
-        Ok(id) => {
-            let response = CreateUserOutput{
-                id: id.to_string()
-            };
-            Ok(Json(response))
-        }
+
+    let hashed_password = password::hash_password(&data.password).map_err(|e| {
+        eprintln!("Password hashing error: {:?}", e);
+        poem::Error::from_string(
+            "Failed to process password",
+            poem::http::StatusCode::INTERNAL_SERVER_ERROR,
+        )
+    })?;
+
+    match s.store.sign_up(data.username.clone(), hashed_password).await {
+        Ok(id) => Ok(Json(CreateUserOutput { id })),
         Err(e) => {
             eprintln!("Sign up error for user '{}': {:?}", data.username, e);
             match e {
-                DieselError::DatabaseError(DatabaseErrorKind::UniqueViolation, _) => {
-                    Err(poem::Error::from_string(
-                        "Username already exists",
-                        poem::http::StatusCode::CONFLICT,
-                    ))
-                }
-                _ => {
-                    Err(poem::Error::from_string(
-                        "Failed to create user",
-                        poem::http::StatusCode::INTERNAL_SERVER_ERROR,
-                    ))
-                }
-            } 
+                StoreError::Diesel(DieselError::DatabaseError(
+                    DatabaseErrorKind::UniqueViolation,
+                    _,
+                )) => Err(poem::Error::from_string(
+                    "Username already exists",
+                    poem::http::StatusCode::CONFLICT,
+                )),
+                _ => Err(poem::Error::from_string(
+                    "Failed to create user",
+                    poem::http::StatusCode::INTERNAL_SERVER_ERROR,
+                )),
+            }
         }
     }
 }
 
 #[handler]
-pub fn sign_in(Json(data): Json<CreateUserInput>, Data(s):Data<&Arc<Mutex<Store>>>) -> Result<Json<SignInOutput>, poem::Error> {
+pub async fn sign_in(
+    Json(data): Json<CreateUserInput>,
+    Data(s): Data<&Arc<AppState>>,
+) -> Result<Json<SignInOutput>, poem::Error> {
     validate_user_input(&data.username, &data.password)?;
-    let mut locked_s= s.lock().unwrap();
-    match locked_s.sign_in(data.username.clone(), data.password.clone()) {
-        Ok(user_id) => {
-            match jwt::generate_jwt(&user_id) {
-                Ok(token) => {
-                    let response = SignInOutput {
-                        jwt: token
-                    };
-                    Ok(Json(response))
-                }
-                Err(e) => {
-                    eprintln!("JWT generation error: {:?}", e);
-                    Err(poem::Error::from_string(
-                        "Failed to generate token",
-                        poem::http::StatusCode::INTERNAL_SERVER_ERROR,
-                    ))
-                }
-            }
-        }
-        Err(e) => {
+
+    let user_id = s
+        .store
+        .sign_in(data.username.clone(), data.password.clone())
+        .await
+        .map_err(|e| {
             eprintln!("Sign in error for user '{}': {:?}", data.username, e);
-            Err(poem::Error::from_string(
+            poem::Error::from_string(
                 "Invalid username or password",
                 poem::http::StatusCode::UNAUTHORIZED,
-            ))
-        }
-    }
+            )
+        })?;
+
+    let token = jwt::generate_jwt(s.jwt_secret(), &user_id).map_err(|e| {
+        eprintln!("JWT generation error: {:?}", e);
+        poem::Error::from_string(
+            "Failed to generate token",
+            poem::http::StatusCode::INTERNAL_SERVER_ERROR,
+        )
+    })?;
+
+    Ok(Json(SignInOutput { jwt: token }))
 }
 
 fn validate_user_input(username: &str, password: &str) -> Result<(), poem::Error> {

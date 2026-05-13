@@ -5,8 +5,9 @@ edition = "2024"
 
 [dependencies]
 chrono = "0.4.43"
-diesel = { version = "2.2.0", features = ["postgres","chrono"]}
-dotenvy = "0.15.7"
-uuid = {version = "1.17.0", features = ["v4"]}
+diesel = { version = "2.3.6", features = ["postgres", "chrono"] }
+deadpool-diesel = { version = "0.6.1", features = ["postgres"] }
+uuid = { version = "1.17.0", features = ["v4"] }
 argon2 = "0.5.3"
 rand_core = "0.10.0"
+thiserror = "2.0.18"

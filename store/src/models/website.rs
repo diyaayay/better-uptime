@@ -1,12 +1,13 @@
-use crate::store::Store;
+use crate::store::{Store, StoreError};
 use chrono::Utc;
-use diesel::{Insertable, prelude::*};
+use diesel::prelude::*;
+use diesel::result::Error as DieselError;
 use uuid::Uuid;
-#[derive(Queryable, Selectable, Insertable)]
+
+#[derive(Queryable, Selectable, Insertable, Clone)]
 #[diesel(table_name = crate::schema::website)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Website {
-
     pub id: String,
     pub url: String,
     pub user_id: String,
@@ -17,87 +18,119 @@ pub struct Website {
     pub response_time_ms: Option<i32>,
 }
 
-
-
 impl Store {
-    pub fn create_website(&mut self, user_id: String, url: String) -> Result<Website, diesel::result::Error> {
-        let id = Uuid::new_v4();
-        let website = Website{
-            user_id,
+    pub async fn create_website(
+        &self,
+        user_id: String,
+        url: String,
+    ) -> Result<Website, StoreError> {
+        let new_website = Website {
+            id: Uuid::new_v4().to_string(),
             url,
-            id:id.to_string(),
+            user_id,
             time_added: Utc::now().naive_utc(),
             is_up: Some(true),
             last_checked: None,
             last_down_time: None,
-            response_time_ms: None
+            response_time_ms: None,
         };
 
-        diesel::insert_into(crate::schema::website::table)
-        .values(&website)
-        .returning(Website::as_returning())
-        .get_result(&mut self.conn)?;
+        let conn = self.pool.get().await?;
+        let inserted = conn
+            .interact(move |conn| {
+                diesel::insert_into(crate::schema::website::table)
+                    .values(&new_website)
+                    .returning(Website::as_returning())
+                    .get_result(conn)
+            })
+            .await??;
 
-    Ok(website)
-    
-    }
-    pub fn get_website(&mut self, input_id:String) -> Result<Website, diesel::result::Error>{
-        use crate::schema::website::dsl::*;
-        let website_result= website.filter(id.eq(input_id))
-        .select(Website::as_select())
-        .first(&mut self.conn)?;
-    Ok(website_result)
+        Ok(inserted)
     }
 
-    pub fn list_websites(&mut self, input_user_id: String) -> Result<Vec<Website>, diesel::result::Error>{
-        use crate::schema::website::dsl::*;
-        let websites = website.filter
-        (user_id.eq(input_user_id.clone()))
-        .order(time_added.desc())
-        .select(Website::as_select())
-        .load(&mut self.conn)?;
-    Ok(websites)  
+    pub async fn get_website(&self, input_id: String) -> Result<Website, StoreError> {
+        let conn = self.pool.get().await?;
+        let website_result = conn
+            .interact(move |conn| {
+                use crate::schema::website::dsl::*;
+                website
+                    .filter(id.eq(input_id))
+                    .select(Website::as_select())
+                    .first(conn)
+            })
+            .await??;
+        Ok(website_result)
     }
 
-    pub fn update_website(
-        &mut self,
+    pub async fn list_websites(
+        &self,
+        input_user_id: String,
+    ) -> Result<Vec<Website>, StoreError> {
+        let conn = self.pool.get().await?;
+        let websites = conn
+            .interact(move |conn| {
+                use crate::schema::website::dsl::*;
+                website
+                    .filter(user_id.eq(input_user_id))
+                    .order(time_added.desc())
+                    .select(Website::as_select())
+                    .load(conn)
+            })
+            .await??;
+        Ok(websites)
+    }
+
+    pub async fn update_website(
+        &self,
         website_id: String,
         input_user_id: String,
-        new_url: String
-    ) -> Result<Website, diesel::result::Error> {
-        use crate::schema::website::dsl::*;
-        let updated = diesel::update(
-            website
-        ).filter(id.eq(website_id.clone()))
-        .filter(user_id.eq(input_user_id.clone()))
-        .set(url.eq(new_url))
-        .returning(Website::as_returning())
-        .get_result(&mut self.conn)?;
-    Ok(updated)
+        new_url: String,
+    ) -> Result<Website, StoreError> {
+        let conn = self.pool.get().await?;
+        let updated = conn
+            .interact(move |conn| {
+                use crate::schema::website::dsl::*;
+                diesel::update(website)
+                    .filter(id.eq(website_id))
+                    .filter(user_id.eq(input_user_id))
+                    .set(url.eq(new_url))
+                    .returning(Website::as_returning())
+                    .get_result(conn)
+            })
+            .await??;
+        Ok(updated)
     }
 
-    pub fn delete_website (
-        &mut self,
+    pub async fn delete_website(
+        &self,
         website_id: String,
-        input_user_id :String 
-    ) -> Result< usize, diesel::result::Error> {
-        use crate::schema::website::dsl::*;
-        let deleted = diesel::delete(website)
-        .filter(id.eq(website_id.clone()))
-        .filter(user_id.eq(input_user_id.clone()))
-        .execute(&mut self.conn)?;
-    if deleted == 0 {
-        return Err(diesel::result::Error::NotFound);
+        input_user_id: String,
+    ) -> Result<usize, StoreError> {
+        let conn = self.pool.get().await?;
+        let deleted = conn
+            .interact(move |conn| {
+                use crate::schema::website::dsl::*;
+                diesel::delete(website)
+                    .filter(id.eq(website_id))
+                    .filter(user_id.eq(input_user_id))
+                    .execute(conn)
+            })
+            .await??;
+
+        if deleted == 0 {
+            return Err(StoreError::Diesel(DieselError::NotFound));
+        }
+        Ok(deleted)
     }
-    Ok(deleted)
-}
 
-pub fn get_all_websites(&mut self) -> Result<Vec<Website>, diesel::result::Error> {
-    use crate::schema::website::dsl::*;
-
-    let all_websites = website.select(Website::as_select())
-    .load(&mut self.conn)?;
-
-    Ok(all_websites)
-}
+    pub async fn get_all_websites(&self) -> Result<Vec<Website>, StoreError> {
+        let conn = self.pool.get().await?;
+        let all_websites = conn
+            .interact(|conn| {
+                use crate::schema::website::dsl::*;
+                website.select(Website::as_select()).load(conn)
+            })
+            .await??;
+        Ok(all_websites)
+    }
 }

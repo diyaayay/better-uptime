@@ -7,13 +7,13 @@ use poem::{
 };
 
 use crate::auth::AuthUser;
+use crate::config::AppState;
 use crate::monitor::check_website;
 use crate::request_inputs::{CreateWebsiteInput, UpdateWebsiteInput};
 use crate::request_outputs::{
-    CheckHistoryItem, CreateWebsiteOutput, GetWebsiteOutput, ListWebsiteOutput, WebsiteHistoryOutput,
-    WebsiteItem, WebsiteStatusOutput,
+    CheckHistoryItem, CreateWebsiteOutput, GetWebsiteOutput, ListWebsiteOutput,
+    WebsiteHistoryOutput, WebsiteItem, WebsiteStatusOutput,
 };
-use crate::config::AppState;
 use store::StoreError;
 
 #[derive(serde::Serialize)]
@@ -32,7 +32,11 @@ pub struct HistoryQuery {
 
 /// Map a `StoreError` into a `poem::Error` with a sensible default mapping:
 /// `Diesel::NotFound` -> 404 with `not_found_msg`, everything else -> 500 with `fallback_msg`.
-fn map_store_err(e: StoreError, not_found_msg: &'static str, fallback_msg: &'static str) -> poem::Error {
+fn map_store_err(
+    e: StoreError,
+    not_found_msg: &'static str,
+    fallback_msg: &'static str,
+) -> poem::Error {
     match e {
         StoreError::Diesel(DieselError::NotFound) => {
             poem::Error::from_string(not_found_msg, poem::http::StatusCode::NOT_FOUND)
@@ -86,13 +90,17 @@ pub async fn create_website(
 ) -> Result<Json<CreateWebsiteOutput>, poem::Error> {
     validate_url(&data.url)?;
 
-    let website = s.store.create_website(user_id, data.url).await.map_err(|e| {
-        eprintln!("Error creating website: {:?}", e);
-        poem::Error::from_string(
-            "Failed to create website",
-            poem::http::StatusCode::INTERNAL_SERVER_ERROR,
-        )
-    })?;
+    let website = s
+        .store
+        .create_website(user_id, data.url)
+        .await
+        .map_err(|e| {
+            eprintln!("Error creating website: {:?}", e);
+            poem::Error::from_string(
+                "Failed to create website",
+                poem::http::StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })?;
 
     Ok(Json(CreateWebsiteOutput { id: website.id }))
 }
@@ -131,7 +139,8 @@ pub async fn update_website(
 ) -> Result<Json<CreateWebsiteOutput>, poem::Error> {
     validate_url(&data.url)?;
 
-    let website = s.store
+    let website = s
+        .store
         .update_website(id.clone(), user_id, data.url)
         .await
         .map_err(|e| {
@@ -152,14 +161,17 @@ pub async fn delete_website(
     AuthUser(user_id): AuthUser,
     Data(s): Data<&Arc<AppState>>,
 ) -> Result<Json<serde_json::Value>, poem::Error> {
-    s.store.delete_website(id.clone(), user_id).await.map_err(|e| {
-        eprintln!("Error deleting website {}: {:?}", id, e);
-        map_store_err(
-            e,
-            "Website not found or you don't have permission to delete it",
-            "Failed to delete website",
-        )
-    })?;
+    s.store
+        .delete_website(id.clone(), user_id)
+        .await
+        .map_err(|e| {
+            eprintln!("Error deleting website {}: {:?}", id, e);
+            map_store_err(
+                e,
+                "Website not found or you don't have permission to delete it",
+                "Failed to delete website",
+            )
+        })?;
 
     Ok(Json(serde_json::json!({
         "success": true,
@@ -187,23 +199,25 @@ pub async fn check_website_now(
 
     let result = check_website(&website.url).await;
 
-    s.store.record_check(
-        id.clone(),
-        result.is_up,
-        result.response_time_ms,
-        result.status_code,
-        result.error_message.clone(),
-    )
-    .await
-    .map_err(|e| {
-        eprintln!("Error recording check for website {}: {:?}", id, e);
-        poem::Error::from_string(
-            "Failed to record check history",
-            poem::http::StatusCode::INTERNAL_SERVER_ERROR,
+    s.store
+        .record_check(
+            id.clone(),
+            result.is_up,
+            result.response_time_ms,
+            result.status_code,
+            result.error_message.clone(),
         )
-    })?;
+        .await
+        .map_err(|e| {
+            eprintln!("Error recording check for website {}: {:?}", id, e);
+            poem::Error::from_string(
+                "Failed to record check history",
+                poem::http::StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })?;
 
-    s.store.update_website_status(id.clone(), result.is_up, result.response_time_ms)
+    s.store
+        .update_website_status(id.clone(), result.is_up, result.response_time_ms)
         .await
         .map_err(|e| {
             eprintln!("Error updating website status {}: {:?}", id, e);
@@ -263,7 +277,11 @@ pub async fn get_website_history(
 ) -> Result<Json<WebsiteHistoryOutput>, poem::Error> {
     let website = s.store.get_website(id.clone()).await.map_err(|e| {
         eprintln!("Error fetching website {} for history: {:?}", id, e);
-        map_store_err(e, "Website not found", "Failed to fetch the website history")
+        map_store_err(
+            e,
+            "Website not found",
+            "Failed to fetch the website history",
+        )
     })?;
 
     if website.user_id != user_id {

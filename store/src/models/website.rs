@@ -62,10 +62,7 @@ impl Store {
         Ok(website_result)
     }
 
-    pub async fn list_websites(
-        &self,
-        input_user_id: String,
-    ) -> Result<Vec<Website>, StoreError> {
+    pub async fn list_websites(&self, input_user_id: String) -> Result<Vec<Website>, StoreError> {
         let conn = self.pool.get().await?;
         let websites = conn
             .interact(move |conn| {

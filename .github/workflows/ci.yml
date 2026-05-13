@@ -10,6 +10,8 @@ env:
   CARGO_TERM_COLOR: always
   DATABASE_URL: postgresql://postgres:postgres@localhost:5432/betteruptime_test
   JWT_SECRET: ci-test-jwt-secret-must-be-at-least-32-chars-long
+  # GitHub Actions: opt into Node.js 24 for JS-based actions (see GH changelog on Node 20 deprecation).
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   rust:
@@ -29,7 +31,7 @@ jobs:
           --health-retries 5
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: dtolnay/rust-toolchain@stable
         with:

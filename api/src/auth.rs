@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use poem::http::StatusCode;
 use poem::{
-    web::headers::{authorization::Bearer, Authorization, HeaderMapExt},
     FromRequest, Request, RequestBody, Result,
+    web::headers::{Authorization, HeaderMapExt, authorization::Bearer},
 };
 
 use crate::config::AppState;
@@ -25,19 +25,13 @@ impl<'a> FromRequest<'a> for AuthUser {
             .headers()
             .typed_get::<Authorization<Bearer>>()
             .ok_or_else(|| {
-                poem::Error::from_string(
-                    "Missing Authorization header",
-                    StatusCode::UNAUTHORIZED,
-                )
+                poem::Error::from_string("Missing Authorization header", StatusCode::UNAUTHORIZED)
             })?;
 
         let token = auth_header.token();
         let claims = verify_jwt(state.jwt_secret(), token).map_err(|e| {
             eprintln!("JWT verification error: {:?}", e);
-            poem::Error::from_string(
-                "Invalid or expired token",
-                StatusCode::UNAUTHORIZED,
-            )
+            poem::Error::from_string("Invalid or expired token", StatusCode::UNAUTHORIZED)
         })?;
 
         Ok(AuthUser(claims.sub))

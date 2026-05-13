@@ -1,5 +1,5 @@
-use std::time::Duration;
 use reqwest::Client;
+use std::time::Duration;
 
 pub struct CheckResult {
     pub is_up: bool,

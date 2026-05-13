@@ -1,6 +1,4 @@
-use poem::{
-    EndpointExt, Route, Server, get, listener::TcpListener, post,
-};
+use poem::{EndpointExt, Route, Server, get, listener::TcpListener, post};
 
 use crate::config::{AppConfig, AppState};
 
